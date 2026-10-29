@@ -14,7 +14,10 @@ class ServerConfig:
         default_factory=lambda: os.getenv("APP_API_TOKEN", "vn-invoice-local-dev-token")
     )
     max_file_size_mb: int = field(
-        default_factory=lambda: int(os.getenv("MAX_FILE_SIZE_MB", "25"))
+        default_factory=lambda: int(os.getenv("MAX_FILE_SIZE_MB", "30"))
+    )
+    max_pdf_pages: int = field(
+        default_factory=lambda: int(os.getenv("MAX_PDF_PAGES", "50"))
     )
     max_files_per_batch: int = field(
         default_factory=lambda: int(os.getenv("MAX_FILES_PER_BATCH", "100"))

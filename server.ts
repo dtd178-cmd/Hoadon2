@@ -22,7 +22,7 @@ import {
 
 const PORT = 3000;
 const DEFAULT_API_TOKEN = process.env.APP_API_TOKEN || 'vn-invoice-local-dev-token';
-const MAX_FILE_SIZE_MB = Number(process.env.MAX_FILE_SIZE_MB || 25);
+const MAX_FILE_SIZE_MB = Number(process.env.MAX_FILE_SIZE_MB || 30);
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 const MAX_FILES_PER_BATCH = Number(process.env.MAX_FILES_PER_BATCH || 100);
 
@@ -179,6 +179,42 @@ function parsePdfBufferToLines(buffer: Buffer): {
   return { lines, pageCount, method };
 }
 
+function isSubheaderOrNumberingRow(
+  worksheet: ExcelJS.Worksheet,
+  candidateRowNum: number,
+  detectedColumns: ExcelColumnInfo[]
+): boolean {
+  if (candidateRowNum > (worksheet.rowCount || 1)) return false;
+  const row = worksheet.getRow(candidateRowNum);
+  let numberingHits = 0;
+  let subLabelHits = 0;
+  let nonEmptyCount = 0;
+
+  for (const colInfo of detectedColumns) {
+    const cell = row.getCell(colInfo.col_index);
+    if (cell.isMerged && Number(cell.master.row) < candidateRowNum) {
+      return true;
+    }
+    const rawVal = cell.value;
+    if (rawVal === null || rawVal === undefined) continue;
+    const text = String(rawVal).trim();
+    if (!text || text.startsWith('=')) continue;
+    nonEmptyCount++;
+
+    if (/^[\(\[]?\d{1,2}[\)\]]?$/.test(text) || /^(?:cột|cot|col)\s*\d+$/i.test(text)) {
+      numberingHits++;
+    } else if (
+      matchHeaderToField(text) !== null ||
+      /bat buoc|optional|required|dd\/mm|yyyy|ghi chu|don vi/i.test(text) ||
+      /^[a-z_]{3,25}$/.test(text)
+    ) {
+      subLabelHits++;
+    }
+  }
+
+  return numberingHits >= 2 || (numberingHits + subLabelHits >= 2 && nonEmptyCount >= 2);
+}
+
 async function analyzeExcelFile(filePath: string, originalFilename: string): Promise<ExcelTemplateAnalysis> {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(filePath);
@@ -237,7 +273,29 @@ async function analyzeExcelFile(filePath: string, originalFilename: string): Pro
       }
     }
 
-    const sampleDataRow = bestHeaderRow + 1;
+    const candidateSubRow = bestHeaderRow + 1;
+    const hasSubHeader = isSubheaderOrNumberingRow(worksheet, candidateSubRow, detectedColumns);
+    const sampleDataRow = hasSubHeader ? bestHeaderRow + 2 : bestHeaderRow + 1;
+
+    if (hasSubHeader) {
+      const subRowObj = worksheet.getRow(candidateSubRow);
+      for (const colInfo of detectedColumns) {
+        const subVal = subRowObj.getCell(colInfo.col_index).value;
+        const subText = subVal !== null && subVal !== undefined ? String(subVal).trim() : '';
+        if (!colInfo.mapped_field && subText) {
+          const subMapped = matchHeaderToField(subText);
+          if (subMapped) colInfo.mapped_field = subMapped;
+        }
+      }
+    }
+
+    const colIndices = detectedColumns.map((c) => c.col_index);
+    const isNineColEBillLayout =
+      detectedColumns.length === 9 &&
+      colIndices.includes(8) &&
+      colIndices.includes(9) &&
+      (bestHeaderRow === 5 || originalFilename.toLowerCase().includes('importebill'));
+
     const formulaColumns: string[] = [];
     const dataRowObj = worksheet.getRow(sampleDataRow);
 
@@ -252,12 +310,15 @@ async function analyzeExcelFile(filePath: string, originalFilename: string): Pro
         colInfo.formula_template = cell.value;
         formulaColumns.push(colInfo.col_letter);
       }
+      if (colInfo.col_index === 9 && (isNineColEBillLayout || colInfo.mapped_field === 'equal_col_h')) {
+        colInfo.mapped_field = 'equal_col_h';
+      }
     }
 
     sheets.push({
       sheet_name: worksheet.name,
       header_row: bestHeaderRow,
-      start_data_row: bestHeaderRow + 1,
+      start_data_row: sampleDataRow,
       max_row: worksheet.rowCount,
       max_column: worksheet.columnCount,
       columns: detectedColumns,
@@ -276,33 +337,31 @@ async function analyzeExcelFile(filePath: string, originalFilename: string): Pro
 
 async function createSampleAccountingTemplateFile(destPath: string): Promise<void> {
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet('Bang_Ke_Mua_Vao');
+  const ws = wb.addWorksheet('Sheet1');
 
-  ws.mergeCells('A1:M1');
+  ws.mergeCells('A1:I1');
   const titleCell = ws.getCell('A1');
-  titleCell.value = 'BẢNG KÊ HÓA ĐƠN, CHỨNG TỪ HÀNG HÓA, DỊCH VỤ MUA VÀO (MẪU KẾ TOÁN)';
-  titleCell.font = { bold: true, size: 13 };
+  titleCell.value = 'BẢNG KÊ NHẬP HÓA ĐƠN ĐIỆN TỬ (IMPORTEBILL TEMPLATE V3 - 9 CỘT)';
+  titleCell.font = { bold: true, size: 12 };
 
-  ws.mergeCells('A2:M2');
-  ws.getCell('A2').value = 'Giữ nguyên cấu trúc cột, định dạng số và công thức tính Tổng thanh toán ở cột L';
+  ws.mergeCells('A2:I2');
+  ws.getCell('A2').value =
+    'Cấu trúc chuẩn: Sheet1 | Dòng 5: Tiêu đề | Dòng 6: Đánh số cột | Dòng 7: Bắt đầu dữ liệu | Cột I = Cột H';
 
   const headers = [
     'STT',
     'Ký hiệu hóa đơn',
     'Số hóa đơn',
-    'Ngày lập',
-    'Tên người bán',
+    'Ngày hóa đơn',
     'Mã số thuế người bán',
-    'Mặt hàng / Nội dung',
-    'Doanh số mua chưa có thuế',
-    'Thuế suất',
-    'Thuế GTGT',
-    'Chiết khấu',
+    'Tên người bán',
+    'Tiền trước thuế',
     'Tổng tiền thanh toán',
-    'Ghi chú / Trạng thái',
+    'Giá trị quy đổi (Bằng cột H)',
   ];
 
-  const headerRow = ws.getRow(4);
+  const headerRow = ws.getRow(5);
+  const subRow = ws.getRow(6);
   headers.forEach((h, idx) => {
     const cell = headerRow.getCell(idx + 1);
     cell.value = h;
@@ -313,19 +372,28 @@ async function createSampleAccountingTemplateFile(destPath: string): Promise<voi
       fgColor: { argb: 'FF1E293B' },
     };
     cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+
+    const subCell = subRow.getCell(idx + 1);
+    subCell.value = `(${idx + 1})`;
+    subCell.font = { italic: true, size: 9, color: { argb: 'FF334155' } };
+    subCell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE2E8F0' },
+    };
+    subCell.alignment = { vertical: 'middle', horizontal: 'center' };
   });
   headerRow.height = 26;
+  subRow.height = 20;
 
-  // Dòng dữ liệu mẫu số 5 có định dạng chuẩn và công thức ở cột L (=H5-K5+J5)
-  const sampleRow = ws.getRow(5);
+  // Dòng dữ liệu đầu tiên ở dòng 7
+  const sampleRow = ws.getRow(7);
   sampleRow.getCell(1).value = 1;
+  sampleRow.getCell(7).numFmt = '#,##0';
   sampleRow.getCell(8).numFmt = '#,##0';
-  sampleRow.getCell(10).numFmt = '#,##0';
-  sampleRow.getCell(11).numFmt = '#,##0';
-  sampleRow.getCell(12).value = { formula: 'H5-K5+J5', result: 0 };
-  sampleRow.getCell(12).numFmt = '#,##0';
+  sampleRow.getCell(9).numFmt = '#,##0';
 
-  const widths = [6, 14, 14, 14, 34, 18, 30, 18, 10, 16, 14, 18, 22];
+  const widths = [8, 16, 16, 16, 20, 36, 18, 20, 22];
   widths.forEach((w, i) => {
     ws.getColumn(i + 1).width = w;
   });
@@ -647,6 +715,13 @@ async function startServer() {
         }
       }
 
+      const shouldColIEqualH =
+        colMap[9] === 'equal_col_h' ||
+        (sheetMeta.columns.length === 9 && sheetMeta.header_row === 5);
+      if (shouldColIEqualH) {
+        colMap[9] = 'equal_col_h';
+      }
+
       const refRow = ws.getRow(startRow);
 
       invoices.forEach((inv, idx) => {
@@ -679,7 +754,7 @@ async function startServer() {
           }
 
           const fieldName = colMap[cIdx];
-          if (!fieldName) continue;
+          if (!fieldName || fieldName === 'equal_col_h') continue;
 
           if (fieldName === 'stt') {
             targetCell.value = idx + 1;
@@ -695,6 +770,23 @@ async function startServer() {
             }
           }
         }
+
+        // Quy tắc nghiệp vụ: Cột I (col 9) = Cột H (col 8)
+        if (shouldColIEqualH) {
+          const cellH = row.getCell(8);
+          const cellI = row.getCell(9);
+          const refCellI = refRow.getCell(9);
+          if (currentRowNumber !== startRow && refCellI.style) {
+            cellI.style = JSON.parse(JSON.stringify(refCellI.style));
+          }
+          if (!(cellI.value && typeof cellI.value === 'object' && 'formula' in cellI.value)) {
+            cellI.value = cellH.value;
+            if (cellH.numFmt && !cellI.numFmt) {
+              cellI.numFmt = cellH.numFmt;
+            }
+          }
+        }
+
         row.commit();
       });
 
@@ -775,6 +867,11 @@ async function startServer() {
       'README.md',
       'backend/requirements.txt',
       'backend/.env.example',
+      'backend/app/__init__.py',
+      'backend/app/models.py',
+      'backend/app/config.py',
+      'backend/app/auth.py',
+      'backend/app/logger.py',
       'backend/app/main.py',
       'backend/app/ocr_engine.py',
       'backend/app/pdf_processor.py',

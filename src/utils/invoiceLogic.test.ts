@@ -7,6 +7,7 @@ import {
   validateInvoiceBatch,
   matchHeaderToField,
   buildSyntheticPdfBuffer,
+  stripPartyLabel,
 } from './invoiceLogic';
 import { OcrTextLine } from '../types/invoice';
 
@@ -24,16 +25,34 @@ test('normalizeDateStr normalizes Vietnamese and slash date formats to YYYY-MM-D
   assert.equal(normalizeDateStr('Date: 2026-07-22'), '2026-07-22');
 });
 
+test('stripPartyLabel removes Vietnamese and English labels while preserving internal company colons', () => {
+  assert.equal(
+    stripPartyLabel('Đơn vị bán hàng (Seller): CÔNG TY CỔ PHẦN VẬT TƯ BÁCH KHOA', 'seller'),
+    'CÔNG TY CỔ PHẦN VẬT TƯ BÁCH KHOA'
+  );
+  assert.equal(
+    stripPartyLabel('Tên đơn vị bán hàng (Seller)：CÔNG TY TNHH ĐIỆN LỰC MIỀN BẮC', 'seller'),
+    'CÔNG TY TNHH ĐIỆN LỰC MIỀN BẮC'
+  );
+  assert.equal(
+    stripPartyLabel(
+      'Đơn vị bán hàng: CÔNG TY TNHH MTV X - CHI NHÁNH 1: KHO VẬN ĐÔNG ANH',
+      'seller'
+    ),
+    'CÔNG TY TNHH MTV X - CHI NHÁNH 1: KHO VẬN ĐÔNG ANH'
+  );
+});
+
 test('extractInvoiceFromLines strictly separates Seller MST and Buyer MST', () => {
   const sampleLines: OcrTextLine[] = [
     { text: 'HÓA ĐƠN GIÁ TRỊ GIA TĂNG', confidence: 0.99, page: 1, source: 'PDF_TEXT' },
     { text: 'Ngày 20 tháng 10 năm 2026', confidence: 0.99, page: 1, source: 'PDF_TEXT' },
     { text: 'Ký hiệu: 1C26TAA   Số: 00089123', confidence: 0.99, page: 1, source: 'PDF_TEXT' },
-    { text: 'Đơn vị bán hàng: CÔNG TY CỔ PHẦN GIẢI PHÁP SỐ ĐÔNG ĐÔ', confidence: 0.98, page: 1, source: 'PDF_TEXT' },
+    { text: 'Đơn vị bán hàng (Seller): CÔNG TY CỔ PHẦN GIẢI PHÁP SỐ ĐÔNG ĐÔ', confidence: 0.98, page: 1, source: 'PDF_TEXT' },
     { text: 'Mã số thuế: 0102345678', confidence: 0.99, page: 1, source: 'PDF_TEXT' },
     { text: 'Địa chỉ: Tầng 8, Tòa nhà Dịch Vọng, Cầu Giấy, Hà Nội', confidence: 0.97, page: 1, source: 'PDF_TEXT' },
     { text: 'Họ tên người mua hàng: Trần Thị Thu Hà', confidence: 0.98, page: 1, source: 'PDF_TEXT' },
-    { text: 'Tên đơn vị mua: CÔNG TY TNHH SẢN XUẤT MINH KHÔI', confidence: 0.98, page: 1, source: 'PDF_TEXT' },
+    { text: 'Tên đơn vị: CÔNG TY TNHH SẢN XUẤT MINH KHÔI', confidence: 0.98, page: 1, source: 'PDF_TEXT' },
     { text: 'Mã số thuế: 0312345679-001', confidence: 0.99, page: 1, source: 'PDF_TEXT' },
     { text: 'STT   Tên hàng hóa, dịch vụ   ĐVT   Số lượng   Đơn giá   Thành tiền', confidence: 0.99, page: 1, source: 'PDF_TEXT' },
     { text: '1   Phần mềm quản trị doanh nghiệp   Gói   1   50.000.000   50.000.000', confidence: 0.98, page: 1, source: 'PDF_TEXT' },
@@ -97,6 +116,7 @@ test('matchHeaderToField maps Vietnamese accounting template headers and buildSy
   assert.equal(matchHeaderToField('MST người mua'), 'buyer_tax_id');
   assert.equal(matchHeaderToField('Doanh số mua chưa có thuế'), 'subtotal_amount');
   assert.equal(matchHeaderToField('Tổng tiền thanh toán'), 'total_amount');
+  assert.equal(matchHeaderToField('Giá trị quy đổi (Bằng cột H)'), 'equal_col_h');
 
   const pdfBytes = buildSyntheticPdfBuffer(['HOA DON GIA TRI GIA TANG']);
   const headerStr = new TextDecoder().decode(pdfBytes.slice(0, 8));

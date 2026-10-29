@@ -1,6 +1,8 @@
 @echo off
 chcp 65001 >nul
-title VNInvoice OCR Server - Running on Port 8000 (Windows 10)
+set PYTHONUTF8=1
+set PYTHONIOENCODING=utf-8
+title VNInvoice OCR Server - Running on Port 8000 (Windows 10 Local & LAN)
 
 echo ============================================================================
 echo   KHOI DONG MAY CHU VNINVOICE OCR (FASTAPI + PADDLEOCR)
@@ -24,11 +26,12 @@ if exist "backend\.env" (
 )
 
 echo.
-echo May chu dang chay tai: http://127.0.0.1:8000
-echo Endpoint kiem tra:     http://127.0.0.1:8000/api/health
+echo May chu dang chay tai: http://127.0.0.1:8000 (truy cap cuc bo)
+echo Lenh nghe mang LAN   : 0.0.0.0:8000 (cac may tinh trong cung mang LAN)
+echo Endpoint kiem tra    : http://127.0.0.1:8000/api/health
 echo Nhan Ctrl+C hoac chay scripts\stop_server_win10.bat de dung may chu.
 echo ============================================================================
 echo.
 
-python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --workers 1
+.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --workers 1
 pause

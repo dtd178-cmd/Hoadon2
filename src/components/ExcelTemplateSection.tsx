@@ -42,6 +42,7 @@ const AVAILABLE_FIELDS: { value: string; label: string }[] = [
   { value: 'vat_amount', label: 'Tiền thuế GTGT' },
   { value: 'discount_amount', label: 'Chiết khấu / Điều chỉnh' },
   { value: 'total_amount', label: 'Tổng tiền thanh toán' },
+  { value: 'equal_col_h', label: 'Tự động bằng Cột H (Quy tắc Cột I = Cột H)' },
   { value: 'currency', label: 'Loại tiền tệ' },
   { value: 'notes', label: 'Ghi chú' },
   { value: 'source_filename', label: 'Tên file PDF nguồn' },

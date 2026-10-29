@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 Điểm vào chính của máy chủ FastAPI (chạy trên Windows 10 ở nhà hoặc MacBook Pro 2017 dự phòng).
 Cung cấp các endpoint:
@@ -10,6 +11,7 @@ Cung cấp các endpoint:
 - POST /api/excel/export           : Xuất dữ liệu hóa đơn vào file Excel mẫu và tải về
 - POST /api/system/cleanup         : Xóa toàn bộ file tạm ngay lập tức
 """
+import re
 import shutil
 import uuid
 from pathlib import Path
@@ -33,7 +35,7 @@ from .excel_exporter import (
 app = FastAPI(
     title="VNInvoice OCR Backend (PaddleOCR)",
     description="Máy chủ đọc hóa đơn điện tử PDF & PDF Scan bằng PaddleOCR và xuất Excel theo mẫu",
-    version="1.0.0",
+    version="1.1.0",
 )
 
 app.add_middleware(
@@ -43,6 +45,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _sanitize_filename(raw_name: Optional[str], fallback: str) -> str:
+    base = Path(raw_name or fallback).name
+    cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", base).strip()
+    return cleaned or fallback
 
 
 def require_auth(
@@ -64,6 +72,7 @@ def health_check():
         "status": "ok",
         "engine": "FastAPI + PaddleOCR (Self-Hosted)",
         "max_file_size_mb": settings.max_file_size_mb,
+        "max_pdf_pages": settings.max_pdf_pages,
         "max_files_per_batch": settings.max_files_per_batch,
         "auto_cleanup_temp": settings.auto_cleanup_temp,
         "paddle_ocr": ocr_status,
@@ -92,10 +101,15 @@ async def upload_and_process_pdfs(
     saved_files = []
 
     for idx, upload in enumerate(files):
-        safe_name = Path(upload.filename or f"invoice_{idx + 1}.pdf").name
+        safe_name = _sanitize_filename(upload.filename, f"invoice_{idx + 1}.pdf")
         dest_path = batch_dir / f"{idx + 1:03d}_{safe_name}"
+        # Ghi file theo từng khối 1MB để không làm tràn bộ nhớ RAM khi tải lên nhiều file 20-30MB
         with open(dest_path, "wb") as out_f:
-            shutil.copyfileobj(upload.file, out_f)
+            while True:
+                chunk = await upload.read(1024 * 1024)
+                if not chunk:
+                    break
+                out_f.write(chunk)
         saved_files.append((safe_name, dest_path))
 
     task = task_manager.create_task(saved_files, batch_dir)
@@ -129,6 +143,38 @@ def cancel_running_task(
     return {"cancelled": True, "task_id": task_id}
 
 
+def _parse_invoice_dict(item: Dict[str, Any], default_method: str = "USER_EDITED") -> ExtractedInvoice:
+    return ExtractedInvoice(
+        id=str(item.get("id", "")),
+        source_filename=str(item.get("source_filename", "")),
+        file_size_bytes=int(item.get("file_size_bytes", 0)),
+        file_sha256=str(item.get("file_sha256", "")),
+        page_count=int(item.get("page_count", 1)),
+        extraction_method=str(item.get("extraction_method", default_method)),
+        seller_name=str(item.get("seller_name", "")),
+        seller_tax_id=str(item.get("seller_tax_id", "")),
+        seller_address=str(item.get("seller_address", "")),
+        invoice_symbol=str(item.get("invoice_symbol", "")),
+        invoice_number=str(item.get("invoice_number", "")),
+        invoice_date=str(item.get("invoice_date", "")),
+        buyer_name=str(item.get("buyer_name", "")),
+        buyer_tax_id=str(item.get("buyer_tax_id", "")),
+        subtotal_amount=float(item["subtotal_amount"]) if item.get("subtotal_amount") is not None else None,
+        vat_rate=str(item.get("vat_rate", "")),
+        vat_amount=float(item["vat_amount"]) if item.get("vat_amount") is not None else None,
+        discount_amount=float(item["discount_amount"]) if item.get("discount_amount") is not None else None,
+        total_amount=float(item["total_amount"]) if item.get("total_amount") is not None else None,
+        currency=str(item.get("currency", "VND")),
+        items_summary=str(item.get("items_summary", "")),
+        notes=str(item.get("notes", "")),
+        verification_status=str(item.get("verification_status", "NEEDS_REVIEW")),
+        uncertain_fields=list(item.get("uncertain_fields", [])),
+        field_sources=dict(item.get("field_sources", {})),
+        field_confidences=dict(item.get("field_confidences", {})),
+        field_pages=dict(item.get("field_pages", {})),
+    )
+
+
 @app.post("/api/invoices/validate")
 def revalidate_invoices(
     payload: Dict[str, Any] = Body(...),
@@ -137,39 +183,7 @@ def revalidate_invoices(
 ):
     require_auth(x_api_token, authorization)
     raw_list = payload.get("invoices", [])
-    invoices: List[ExtractedInvoice] = []
-    for item in raw_list:
-        inv = ExtractedInvoice(
-            id=str(item.get("id", "")),
-            source_filename=str(item.get("source_filename", "")),
-            file_size_bytes=int(item.get("file_size_bytes", 0)),
-            file_sha256=str(item.get("file_sha256", "")),
-            page_count=int(item.get("page_count", 1)),
-            extraction_method=str(item.get("extraction_method", "USER_EDITED")),
-            seller_name=str(item.get("seller_name", "")),
-            seller_tax_id=str(item.get("seller_tax_id", "")),
-            seller_address=str(item.get("seller_address", "")),
-            invoice_symbol=str(item.get("invoice_symbol", "")),
-            invoice_number=str(item.get("invoice_number", "")),
-            invoice_date=str(item.get("invoice_date", "")),
-            buyer_name=str(item.get("buyer_name", "")),
-            buyer_tax_id=str(item.get("buyer_tax_id", "")),
-            subtotal_amount=float(item["subtotal_amount"]) if item.get("subtotal_amount") is not None else None,
-            vat_rate=str(item.get("vat_rate", "")),
-            vat_amount=float(item["vat_amount"]) if item.get("vat_amount") is not None else None,
-            discount_amount=float(item["discount_amount"]) if item.get("discount_amount") is not None else None,
-            total_amount=float(item["total_amount"]) if item.get("total_amount") is not None else None,
-            currency=str(item.get("currency", "VND")),
-            items_summary=str(item.get("items_summary", "")),
-            notes=str(item.get("notes", "")),
-            verification_status=str(item.get("verification_status", "NEEDS_REVIEW")),
-            uncertain_fields=list(item.get("uncertain_fields", [])),
-            field_sources=dict(item.get("field_sources", {})),
-            field_confidences=dict(item.get("field_confidences", {})),
-            field_pages=dict(item.get("field_pages", {})),
-        )
-        invoices.append(inv)
-
+    invoices = [_parse_invoice_dict(item, "USER_EDITED") for item in raw_list]
     validated = validate_invoice_batch(invoices)
     return {"invoices": [i.to_dict() for i in validated]}
 
@@ -181,7 +195,7 @@ async def upload_and_analyze_template(
     authorization: Optional[str] = Header(default=None),
 ):
     require_auth(x_api_token, authorization)
-    filename = file.filename or "template.xlsx"
+    filename = _sanitize_filename(file.filename, "template.xlsx")
     if not filename.lower().endswith(".xlsx"):
         raise HTTPException(
             status_code=400,
@@ -195,6 +209,7 @@ async def upload_and_analyze_template(
     try:
         analysis = analyze_excel_template(tpl_path)
         analysis["template_id"] = tpl_id
+        analysis["template_filename"] = filename
         return analysis
     except Exception as exc:
         if tpl_path.exists():
@@ -208,19 +223,18 @@ def generate_sample_template_endpoint(
     authorization: Optional[str] = Header(default=None),
 ):
     require_auth(x_api_token, authorization)
-    tpl_id = f"tpl_mau_ke_toan_{uuid.uuid4().hex[:8]}.xlsx"
+    tpl_id = f"tpl_import_ebill_v3_{uuid.uuid4().hex[:8]}.xlsx"
     tpl_path = settings.temp_dir / tpl_id
     try:
         create_sample_accounting_template(tpl_path)
         analysis = analyze_excel_template(tpl_path)
         analysis["template_id"] = tpl_id
-        analysis["template_filename"] = "Mau_Bang_Ke_Mua_Vao_Chuan.xlsx"
+        analysis["template_filename"] = "ImportEBill_Template_v3_Mau_9_Cot.xlsx"
         return analysis
     except Exception as exc:
         if tpl_path.exists():
             tpl_path.unlink()
         raise HTTPException(status_code=500, detail=f"Không thể tạo file Excel mẫu: {exc}") from exc
-
 
 
 @app.post("/api/excel/export")
@@ -234,7 +248,7 @@ def export_excel_endpoint(
     if not template_id:
         raise HTTPException(status_code=400, detail="Vui lòng tải lên file Excel mẫu trước khi xuất dữ liệu.")
 
-    tpl_path = settings.temp_dir / Path(template_id).name
+    tpl_path = settings.temp_dir / _sanitize_filename(str(template_id), "template.xlsx")
     if not tpl_path.exists():
         raise HTTPException(status_code=404, detail="File Excel mẫu không tồn tại hoặc đã bị dọn dẹp. Hãy tải lại mẫu.")
 
@@ -242,34 +256,18 @@ def export_excel_endpoint(
     if not raw_invoices:
         raise HTTPException(status_code=400, detail="Danh sách hóa đơn trống, không thể xuất Excel.")
 
-    invoices: List[ExtractedInvoice] = []
-    for item in raw_invoices:
-        inv = ExtractedInvoice(
-            id=str(item.get("id", "")),
-            source_filename=str(item.get("source_filename", "")),
-            file_size_bytes=int(item.get("file_size_bytes", 0)),
-            file_sha256=str(item.get("file_sha256", "")),
-            page_count=int(item.get("page_count", 1)),
-            extraction_method=str(item.get("extraction_method", "PDF_TEXT")),
-            seller_name=str(item.get("seller_name", "")),
-            seller_tax_id=str(item.get("seller_tax_id", "")),
-            seller_address=str(item.get("seller_address", "")),
-            invoice_symbol=str(item.get("invoice_symbol", "")),
-            invoice_number=str(item.get("invoice_number", "")),
-            invoice_date=str(item.get("invoice_date", "")),
-            buyer_name=str(item.get("buyer_name", "")),
-            buyer_tax_id=str(item.get("buyer_tax_id", "")),
-            subtotal_amount=float(item["subtotal_amount"]) if item.get("subtotal_amount") is not None else None,
-            vat_rate=str(item.get("vat_rate", "")),
-            vat_amount=float(item["vat_amount"]) if item.get("vat_amount") is not None else None,
-            discount_amount=float(item["discount_amount"]) if item.get("discount_amount") is not None else None,
-            total_amount=float(item["total_amount"]) if item.get("total_amount") is not None else None,
-            currency=str(item.get("currency", "VND")),
-            items_summary=str(item.get("items_summary", "")),
-            notes=str(item.get("notes", "")),
-            verification_status=str(item.get("verification_status", "VERIFIED")),
-        )
-        invoices.append(inv)
+    invoices = [_parse_invoice_dict(item, "PDF_TEXT") for item in raw_invoices]
+
+    raw_mapping = payload.get("custom_column_mapping") or {}
+    custom_mapping: Dict[int, str] = {}
+    if isinstance(raw_mapping, dict):
+        for k, v in raw_mapping.items():
+            try:
+                col_idx = int(k)
+                if v:
+                    custom_mapping[col_idx] = str(v)
+            except (ValueError, TypeError):
+                pass
 
     out_path = settings.temp_dir / f"Bang_Ke_Hoa_Don_{uuid.uuid4().hex[:8]}.xlsx"
     export_invoices_to_template(
@@ -277,6 +275,7 @@ def export_excel_endpoint(
         output_path=out_path,
         invoices=invoices,
         target_sheet=payload.get("target_sheet"),
+        custom_column_mapping=custom_mapping or None,
         include_audit_sheet=bool(payload.get("include_audit_sheet", True)),
     )
     return FileResponse(
