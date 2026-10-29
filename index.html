@@ -15,6 +15,14 @@
   </head>
   <body class="bg-slate-50 text-slate-900 antialiased selection:bg-blue-600 selection:text-white">
     <div id="root"></div>
+    <script>
+      window.addEventListener('unhandledrejection', function (event) {
+        var msg = event && event.reason ? String(event.reason.message || event.reason) : '';
+        if (msg.indexOf('WebSocket closed without opened') !== -1 || msg.indexOf('vite') !== -1) {
+          event.preventDefault();
+        }
+      });
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -97,10 +97,10 @@ export function createSampleTestPdfFiles(): File[] {
   );
 
   return [
-    new File([pdf1Bytes], '01_HD_DienTu_SaoViet_00089123.pdf', { type: 'application/pdf' }),
-    new File([pdf2Bytes], '02_HD_Scan_VatTuBachKhoa_00045812.pdf', { type: 'application/pdf' }),
-    new File([pdf3Bytes], '03_HD_Scan_SaiLechCongTien_00091044.pdf', { type: 'application/pdf' }),
-    new File([pdf4Bytes], '04_HD_BanSaoTrungLap_00045812.pdf', { type: 'application/pdf' }),
-    new File([corruptedBytes], '05_File_PDF_Bi_Hong_Cau_Truc.pdf', { type: 'application/pdf' }),
+    new File([pdf1Bytes.buffer as ArrayBuffer], '01_HD_DienTu_SaoViet_00089123.pdf', { type: 'application/pdf' }),
+    new File([pdf2Bytes.buffer as ArrayBuffer], '02_HD_Scan_VatTuBachKhoa_00045812.pdf', { type: 'application/pdf' }),
+    new File([pdf3Bytes.buffer as ArrayBuffer], '03_HD_Scan_SaiLechCongTien_00091044.pdf', { type: 'application/pdf' }),
+    new File([pdf4Bytes.buffer as ArrayBuffer], '04_HD_BanSaoTrungLap_00045812.pdf', { type: 'application/pdf' }),
+    new File([corruptedBytes.buffer as ArrayBuffer], '05_File_PDF_Bi_Hong_Cau_Truc.pdf', { type: 'application/pdf' }),
   ];
 }

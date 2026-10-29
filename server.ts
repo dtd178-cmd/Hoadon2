@@ -337,24 +337,53 @@ async function startServer() {
   const app = express();
   app.use(express.json({ limit: '25mb' }));
 
-  // 1. Health Check Endpoint
-  app.get('/api/health', (_req: Request, res: Response) => {
+  const PYTHON_BACKEND_URL = process.env.PYTHON_BACKEND_URL || 'http://127.0.0.1:8000';
+
+  // 1. Health Check Endpoint — Kiểm tra kết nối thực tế tới Python FastAPI (cổng 8000)
+  app.get('/api/health', async (req: Request, res: Response) => {
     const backendPyExists = fs.existsSync(path.resolve(process.cwd(), 'backend/app/main.py'));
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 1500);
+      const pyRes = await fetch(`${PYTHON_BACKEND_URL}/api/health`, {
+        headers: {
+          'X-API-Token': (req.headers['x-api-token'] as string) || DEFAULT_API_TOKEN,
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (pyRes.ok) {
+        const pyData = await pyRes.json();
+        res.json({
+          ...pyData,
+          python_fastapi_running: true,
+          python_backend_url: PYTHON_BACKEND_URL,
+          backend_python_present: backendPyExists,
+        });
+        return;
+      }
+    } catch {
+      // Máy chủ Python FastAPI trên cổng 8000 chưa khởi động
+    }
+
     res.json({
       status: 'ok',
-      engine: 'VNInvoice Self-Hosted OCR Server (FastAPI + PaddleOCR Ready)',
+      engine: 'Node Gateway (Đọc lớp văn bản PDF — Chờ kết nối FastAPI + PaddleOCR cổng 8000)',
+      python_fastapi_running: false,
+      python_backend_url: PYTHON_BACKEND_URL,
       max_file_size_mb: MAX_FILE_SIZE_MB,
       max_files_per_batch: MAX_FILES_PER_BATCH,
       auto_cleanup_temp: true,
       backend_python_present: backendPyExists,
       paddle_ocr: {
-        installed: true,
-        paddle_version: '2.6.2 (CPU Windows 10 & macOS Intel x86_64)',
-        paddleocr_version: '2.8.1',
-        lang: 'vi + en',
+        installed: false,
+        paddle_version: null,
+        paddleocr_version: null,
+        lang: 'vi',
         use_gpu: false,
-        model_loaded: true,
-        error: null,
+        model_loaded: false,
+        error:
+          'Máy chủ Python FastAPI + PaddleOCR (127.0.0.1:8000) hiện chưa bật trong môi trường này. Các file PDF điện tử có lớp văn bản vẫn đọc được bình thường; để OCR ảnh scan thật bằng PaddleOCR, hãy chạy scripts\\start_server_win10.bat trên máy tính Windows 10 của bạn.',
       },
     });
   });
@@ -756,6 +785,7 @@ async function startServer() {
       'backend/tests/test_invoice_pipeline.py',
       'scripts/setup_win10.bat',
       'scripts/start_server_win10.bat',
+      'scripts/start_all_win10.bat',
       'scripts/stop_server_win10.bat',
       'scripts/start_server_mac_intel.sh',
       'docs/DEPLOYMENT_AND_SECURITY.md',
@@ -772,7 +802,11 @@ async function startServer() {
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: false,
+        watch: null,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);

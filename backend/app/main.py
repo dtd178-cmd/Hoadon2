@@ -24,7 +24,11 @@ from .ocr_engine import ocr_engine
 from .task_manager import task_manager
 from .models import ExtractedInvoice
 from .validator import validate_invoice_batch
-from .excel_exporter import analyze_excel_template, export_invoices_to_template
+from .excel_exporter import (
+    analyze_excel_template,
+    export_invoices_to_template,
+    create_sample_accounting_template,
+)
 
 app = FastAPI(
     title="VNInvoice OCR Backend (PaddleOCR)",
@@ -196,6 +200,27 @@ async def upload_and_analyze_template(
         if tpl_path.exists():
             tpl_path.unlink()
         raise HTTPException(status_code=400, detail=f"Không thể phân tích file Excel mẫu: {exc}") from exc
+
+
+@app.post("/api/excel/generate-sample-template")
+def generate_sample_template_endpoint(
+    x_api_token: Optional[str] = Header(default=None),
+    authorization: Optional[str] = Header(default=None),
+):
+    require_auth(x_api_token, authorization)
+    tpl_id = f"tpl_mau_ke_toan_{uuid.uuid4().hex[:8]}.xlsx"
+    tpl_path = settings.temp_dir / tpl_id
+    try:
+        create_sample_accounting_template(tpl_path)
+        analysis = analyze_excel_template(tpl_path)
+        analysis["template_id"] = tpl_id
+        analysis["template_filename"] = "Mau_Bang_Ke_Mua_Vao_Chuan.xlsx"
+        return analysis
+    except Exception as exc:
+        if tpl_path.exists():
+            tpl_path.unlink()
+        raise HTTPException(status_code=500, detail=f"Không thể tạo file Excel mẫu: {exc}") from exc
+
 
 
 @app.post("/api/excel/export")

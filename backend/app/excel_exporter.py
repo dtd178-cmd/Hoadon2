@@ -265,3 +265,69 @@ def export_invoices_to_template(
     wb.close()
     logger.info("Đã xuất thành công %d hóa đơn ra file Excel: %s", len(invoices), output_path.name)
     return output_path
+
+
+def create_sample_accounting_template(dest_path: Path) -> Path:
+    """
+    Tạo file Excel mẫu kế toán chuẩn (.xlsx) bằng openpyxl (có dòng tiêu đề ở dòng 4
+    và công thức tính Tổng thanh toán =H5-K5+J5 ở cột L dòng 5).
+    """
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment
+    except ImportError as exc:
+        raise RuntimeError(
+            "Chưa cài đặt thư viện openpyxl. Hãy chạy: pip install openpyxl==3.1.5"
+        ) from exc
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Bang_Ke_Mua_Vao"
+
+    ws.merge_cells("A1:M1")
+    ws["A1"] = "BẢNG KÊ HÓA ĐƠN, CHỨNG TỪ HÀNG HÓA, DỊCH VỤ MUA VÀO (MẪU KẾ TOÁN)"
+    ws["A1"].font = Font(bold=True, size=13)
+
+    ws.merge_cells("A2:M2")
+    ws["A2"] = "Giữ nguyên cấu trúc cột, định dạng số và công thức tính Tổng thanh toán ở cột L"
+
+    headers = [
+        "STT",
+        "Ký hiệu hóa đơn",
+        "Số hóa đơn",
+        "Ngày lập",
+        "Tên người bán",
+        "Mã số thuế người bán",
+        "Mặt hàng / Nội dung",
+        "Doanh số mua chưa có thuế",
+        "Thuế suất",
+        "Thuế GTGT",
+        "Chiết khấu",
+        "Tổng tiền thanh toán",
+        "Ghi chú / Trạng thái",
+    ]
+
+    header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
+    header_font = Font(bold=True, size=10, color="FFFFFF")
+    header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    for col_idx, text in enumerate(headers, start=1):
+        cell = ws.cell(row=4, column=col_idx, value=text)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = header_align
+
+    ws.row_dimensions[4].height = 26
+
+    # Dòng mẫu số 5 có định dạng số và công thức ở cột L (cột 12)
+    ws.cell(row=5, column=1, value=1)
+    ws.cell(row=5, column=8).number_format = "#,##0"
+    ws.cell(row=5, column=10).number_format = "#,##0"
+    ws.cell(row=5, column=11).number_format = "#,##0"
+    ws.cell(row=5, column=12, value="=H5-K5+J5").number_format = "#,##0"
+
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(str(dest_path))
+    wb.close()
+    return dest_path
+

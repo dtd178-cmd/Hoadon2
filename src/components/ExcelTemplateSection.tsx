@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   AlertCircle,
   FileDown,
+  RotateCcw,
 } from 'lucide-react';
 import { ExcelTemplateAnalysis, ExtractedInvoice } from '../types/invoice';
 
@@ -19,6 +20,7 @@ interface ExcelTemplateSectionProps {
     customMapping: Record<number, string>,
     includeAuditSheet: boolean
   ) => Promise<void>;
+  onStartNewBatch?: () => void;
   isAnalyzing: boolean;
   isExporting: boolean;
 }
@@ -52,6 +54,7 @@ export const ExcelTemplateSection: React.FC<ExcelTemplateSectionProps> = ({
   onUploadTemplate,
   onGenerateSampleTemplate,
   onExportExcel,
+  onStartNewBatch,
   isAnalyzing,
   isExporting,
 }) => {
@@ -294,6 +297,17 @@ export const ExcelTemplateSection: React.FC<ExcelTemplateSectionProps> = ({
               </label>
 
               <div className="flex flex-wrap items-center gap-3">
+                {onStartNewBatch && (
+                  <button
+                    type="button"
+                    onClick={onStartNewBatch}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
+                  >
+                    <RotateCcw className="w-4 h-4 text-slate-600" />
+                    <span>Nhập Bảng Khác</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={handleDownloadErrorReportCsv}

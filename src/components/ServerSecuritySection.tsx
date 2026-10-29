@@ -218,13 +218,32 @@ export const ServerSecuritySection: React.FC<ServerSecuritySectionProps> = ({
             ) : healthData ? (
               <dl className="mt-4 space-y-2.5 text-xs">
                 <div className="flex justify-between py-1.5 border-b border-slate-100">
-                  <dt className="text-slate-500">Trạng thái phản hồi:</dt>
-                  <dd className="font-semibold text-emerald-700">Đang hoạt động (HTTP 200 OK)</dd>
+                  <dt className="text-slate-500">Trạng thái Cổng API:</dt>
+                  <dd className="font-semibold text-emerald-700">Đang phản hồi (HTTP 200 OK)</dd>
                 </div>
-                <div className="flex justify-between py-1.5 border-b border-slate-100">
-                  <dt className="text-slate-500">Nhân xử lý:</dt>
+                <div className="flex justify-between py-1.5 border-b border-slate-100 gap-4">
+                  <dt className="text-slate-500 shrink-0">Nhân xử lý hiện tại:</dt>
                   <dd className="font-mono text-slate-900 text-right">
                     {String(healthData.engine || 'FastAPI + PaddleOCR')}
+                  </dd>
+                </div>
+                <div className="flex justify-between py-1.5 border-b border-slate-100">
+                  <dt className="text-slate-500">Trạng thái PaddleOCR (Python 8000):</dt>
+                  <dd className="font-medium text-right">
+                    {(healthData.paddle_ocr as { installed?: boolean } | undefined)?.installed ? (
+                      <span className="text-emerald-700 font-semibold">
+                        Đã nạp PaddleOCR (
+                        {String(
+                          (healthData.paddle_ocr as { paddleocr_version?: string })
+                            ?.paddleocr_version || '2.8.1'
+                        )}
+                        )
+                      </span>
+                    ) : (
+                      <span className="text-amber-700 font-semibold">
+                        Chưa bật máy chủ Python cổng 8000 (Chỉ đọc PDF Text)
+                      </span>
+                    )}
                   </dd>
                 </div>
                 <div className="flex justify-between py-1.5 border-b border-slate-100">
@@ -240,6 +259,11 @@ export const ServerSecuritySection: React.FC<ServerSecuritySectionProps> = ({
                     {healthData.auto_cleanup_temp ? 'Bật (Xóa ngay sau khi đọc)' : 'Tắt'}
                   </dd>
                 </div>
+                {Boolean((healthData.paddle_ocr as { error?: string } | undefined)?.error) && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 leading-relaxed mt-2">
+                    {String((healthData.paddle_ocr as { error?: string }).error)}
+                  </div>
+                )}
               </dl>
             ) : (
               <div className="mt-4 text-xs text-slate-500">Đang kiểm tra trạng thái máy chủ...</div>

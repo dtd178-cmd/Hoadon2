@@ -8,9 +8,10 @@ import {
   Search,
   Edit3,
   FileSpreadsheet,
-  FlaskConical,
   Trash2,
   RefreshCw,
+  PlusCircle,
+  RotateCcw,
 } from 'lucide-react';
 import {
   BatchTaskResponse,
@@ -19,7 +20,6 @@ import {
   ServerConnectionConfig,
   VerificationStatus,
 } from './types/invoice';
-import { createSampleTestPdfFiles } from './utils/sampleBatchFactory';
 import { validateInvoiceBatch } from './utils/invoiceLogic';
 import { InvoiceEditDrawer } from './components/InvoiceEditDrawer';
 import { ExcelTemplateSection } from './components/ExcelTemplateSection';
@@ -54,6 +54,7 @@ export default function App() {
   const [currentTask, setCurrentTask] = useState<BatchTaskResponse | null>(null);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [showResetConfirmModal, setShowResetConfirmModal] = useState<boolean>(false);
 
   // Dữ liệu hóa đơn đã trích xuất
   const [invoices, setInvoices] = useState<ExtractedInvoice[]>([]);
@@ -110,13 +111,6 @@ export default function App() {
     checkServerHealth();
   }, [serverConfig]);
 
-  // Tự động nạp bộ dữ liệu mẫu kiểm thử ngay lần đầu để có thể trải nghiệm luồng hoàn chỉnh
-  useEffect(() => {
-    const sampleFiles = createSampleTestPdfFiles();
-    setSelectedFiles(sampleFiles);
-    runUploadBatch(sampleFiles);
-  }, []);
-
   const handleUpdateServerConfig = (next: ServerConnectionConfig) => {
     setServerConfig(next);
     try {
@@ -135,11 +129,31 @@ export default function App() {
     e.target.value = '';
   };
 
-  const handleLoadSampleBatch = () => {
-    const samples = createSampleTestPdfFiles();
-    setSelectedFiles(samples);
+  // Làm sạch bảng dữ liệu hiện tại để bắt đầu một đợt nhập hóa đơn mới
+  const handleTriggerNewBatch = () => {
+    if (invoices.length > 0 || selectedFiles.length > 0) {
+      setShowResetConfirmModal(true);
+    } else {
+      executeResetForNewBatch();
+    }
+  };
+
+  const executeResetForNewBatch = () => {
+    if (isUploading && abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    setInvoices([]);
+    setSelectedFiles([]);
+    setCurrentTask(null);
     setUploadError(null);
-    runUploadBatch(samples);
+    setSearchQuery('');
+    setStatusFilter('ALL');
+    setTemplateAnalysis(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    setShowResetConfirmModal(false);
+    setActiveTab('workspace');
   };
 
   const runUploadBatch = async (filesToProcess: File[]) => {
@@ -560,6 +574,39 @@ export default function App() {
 
       {/* Main Content Container */}
       <main className="flex-1 max-w-[1400px] w-full mx-auto px-4 sm:px-6 py-6 space-y-6">
+        {/* Cảnh báo khi mất kết nối tới Backend */}
+        {healthError && (
+          <div
+            role="alert"
+            className="p-4 bg-red-50 border border-red-200 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+          >
+            <div className="flex items-start gap-2.5 text-xs text-red-800">
+              <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-semibold">Chưa kết nối được Máy chủ Backend OCR</div>
+                <div className="mt-0.5 leading-relaxed">{healthError}</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={checkServerHealth}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-red-700 rounded-md hover:bg-red-800 transition-colors whitespace-nowrap shrink-0"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Thử kết nối lại</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('security')}
+                className="px-3 py-1.5 text-xs font-medium text-red-800 bg-red-100 rounded-md hover:bg-red-200 transition-colors whitespace-nowrap shrink-0"
+              >
+                Cấu hình Máy chủ
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Thông báo lỗi toàn cục rõ ràng (không để màn hình trắng) */}
         {uploadError && (
           <div
@@ -619,21 +666,24 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-medium text-slate-800 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0"
+                    className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-medium text-slate-800 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 shadow-2xs"
                   >
-                    <Upload className="w-4 h-4 text-slate-600" />
+                    <Upload className="w-4 h-4 text-blue-600" />
                     <span>Thêm File PDF ({selectedFiles.length})</span>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={handleLoadSampleBatch}
-                    disabled={isUploading}
-                    className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-medium text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors whitespace-nowrap shrink-0 disabled:opacity-50"
-                  >
-                    <FlaskConical className="w-4 h-4 text-blue-600" />
-                    <span>Nạp 5 PDF Mẫu Kiểm Thử</span>
-                  </button>
+                  {(invoices.length > 0 || selectedFiles.length > 0) && (
+                    <button
+                      type="button"
+                      onClick={handleTriggerNewBatch}
+                      disabled={isUploading}
+                      title="Xóa dữ liệu hiện tại để bắt đầu đợt nhập hóa đơn mới"
+                      className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-colors whitespace-nowrap shrink-0 disabled:opacity-50"
+                    >
+                      <RotateCcw className="w-4 h-4 text-slate-600" />
+                      <span>Nhập Đợt Mới</span>
+                    </button>
+                  )}
 
                   {isUploading ? (
                     <button
@@ -888,6 +938,18 @@ export default function App() {
                     />
                   </div>
 
+                  {(invoices.length > 0 || selectedFiles.length > 0) && (
+                    <button
+                      type="button"
+                      onClick={handleTriggerNewBatch}
+                      title="Xóa dữ liệu bảng hiện tại để nhập bảng khác"
+                      className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 hover:text-slate-900 transition-colors whitespace-nowrap shrink-0 shadow-2xs"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
+                      <span>Nhập Bảng Khác</span>
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => setActiveTab('excel')}
@@ -901,13 +963,32 @@ export default function App() {
 
               {/* Nội dung bảng */}
               {filteredInvoices.length === 0 ? (
-                <div className="py-12 px-6 text-center space-y-3">
-                  <div className="text-sm font-medium text-slate-800">
-                    Không có hóa đơn nào khớp với bộ lọc hiện tại
+                <div className="py-16 px-6 text-center space-y-3">
+                  <div className="w-12 h-12 mx-auto rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                    <Upload className="w-6 h-6" />
                   </div>
-                  <p className="text-xs text-slate-500">
-                    Hãy tải lên file PDF hóa đơn hoặc nhấn nút "Nạp 5 PDF Mẫu Kiểm Thử" để xem kết quả trích xuất.
+                  <div className="text-sm font-semibold text-slate-800">
+                    {invoices.length === 0
+                      ? 'Chưa có dữ liệu hóa đơn trong bảng'
+                      : 'Không có hóa đơn nào khớp với bộ lọc hiện tại'}
+                  </div>
+                  <p className="text-xs text-slate-500 max-w-md mx-auto">
+                    {invoices.length === 0
+                      ? 'Hãy nhấn "Thêm File PDF" hoặc kéo thả 20–100 hóa đơn điện tử / PDF scan vào để hệ thống trích xuất tự động.'
+                      : 'Thử chuyển sang bộ lọc "Tất cả" hoặc xóa từ khóa tìm kiếm.'}
                   </p>
+                  {invoices.length === 0 && (
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-2xs"
+                      >
+                        <PlusCircle className="w-4 h-4" />
+                        <span>Chọn File PDF Hóa Đơn Ngay</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -1094,6 +1175,7 @@ export default function App() {
             onUploadTemplate={handleUploadExcelTemplate}
             onGenerateSampleTemplate={handleGenerateSampleTemplate}
             onExportExcel={handleExportExcel}
+            onStartNewBatch={handleTriggerNewBatch}
             isAnalyzing={isAnalyzingExcel}
             isExporting={isExportingExcel}
           />
@@ -1134,6 +1216,54 @@ export default function App() {
         onClose={() => setEditingInvoice(null)}
         onSave={handleSaveEditedInvoice}
       />
+
+      {/* Hộp thoại xác nhận Nhập đợt mới / Xóa bảng để nhập bảng khác */}
+      {showResetConfirmModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="new-batch-modal-title"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs"
+        >
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 border border-slate-200 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 bg-blue-50 text-blue-700 rounded-lg shrink-0">
+                <RotateCcw className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 id="new-batch-modal-title" className="text-base font-semibold text-slate-900">
+                  Nhập Bảng Hóa Đơn Khác?
+                </h3>
+                <p className="text-xs text-slate-600 mt-1">
+                  Bảng hiện tại đang có <strong className="text-slate-900">{invoices.length}</strong> hóa đơn{selectedFiles.length > 0 ? ` và ${selectedFiles.length} file chờ` : ''}. Khi xác nhận, bảng sẽ được làm sạch để bạn sẵn sàng tải lên và đọc đợt hóa đơn tiếp theo.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+              💡 <strong>Lưu ý:</strong> Hãy chắc chắn bạn đã tải xuống bảng kê Excel của đợt này nếu cần lưu trữ trước khi làm sạch.
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowResetConfirmModal(false)}
+                className="px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+              >
+                Giữ lại bảng hiện tại
+              </button>
+              <button
+                type="button"
+                onClick={executeResetForNewBatch}
+                className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors inline-flex items-center gap-1.5 shadow-2xs"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Xác nhận xóa bảng & Nhập mới</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
