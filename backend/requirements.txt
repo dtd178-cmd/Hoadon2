@@ -1,0 +1,30 @@
+# ==============================================================================
+# VNInvoice OCR Backend - Requirements (Windows 10 CPU & macOS Intel CPU)
+# ==============================================================================
+# Yêu cầu phiên bản Python: Python 3.10.x (64-bit) — Khuyến nghị 3.10.11 trên Windows 10
+# Lý do chọn phiên bản:
+# 1. paddlepaddle==2.6.2 (CPU) ổn định nhất trên Windows 10 x86_64 và macOS Intel (MacBook Pro 2017)
+#    mà không đòi hỏi GPU NVIDIA hay tập lệnh AVX-512 đặc thù.
+# 2. paddleocr==2.8.1 tương thích hoàn toàn với paddlepaddle 2.6.2, hỗ trợ mô hình nhận dạng
+#    tiếng Việt (lang='vi') và tiếng Anh (lang='en') cùng bộ phân loại góc xoay (use_angle_cls=True).
+# 3. numpy==1.26.4 được ghim cố định vì numpy 2.x gây lỗi xung đột ABI với opencv-python và paddleocr 2.8.
+# 4. PyMuPDF==1.24.10 đọc lớp văn bản PDF và render trang PDF ra ảnh trực tiếp không cần cài Poppler rời.
+# ==============================================================================
+
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.12
+pydantic==2.9.2
+
+# PaddleOCR & Deep Learning Runtime (CPU)
+paddlepaddle==2.6.2
+paddleocr==2.8.1
+numpy==1.26.4
+opencv-python-headless==4.10.0.84
+Pillow==10.4.0
+shapely==2.0.6
+pyclipper==1.3.0.post5
+
+# PDF & Excel Processing
+PyMuPDF==1.24.10
+openpyxl==3.1.5

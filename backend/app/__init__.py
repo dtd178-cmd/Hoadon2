@@ -1,0 +1,1 @@
+"""VNInvoice OCR FastAPI Package."""

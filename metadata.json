@@ -1,0 +1,6 @@
+{
+  "name": "VNInvoice OCR — Hệ thống Đọc Hóa Đơn PDF & Xuất Excel (PaddleOCR)",
+  "description": "Ứng dụng đọc hàng loạt hóa đơn điện tử PDF và PDF scan bằng PaddleOCR trên máy chủ riêng, kiểm tra dữ liệu, phát hiện trùng lặp và xuất bảng kê Excel theo mẫu.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
